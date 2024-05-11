@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 extern crate win_event_log;
 #[macro_use]
 #[cfg(feature = "xml")]
@@ -10,22 +11,22 @@ use win_event_log::prelude::*;
 #[derive(Deserialize, Default, Debug)]
 #[serde(rename_all = "PascalCase")]
 struct Provider {
-    pub name: Option<String>,
-    pub guid: Option<String>,
+    name: Option<String>,
+    guid: Option<String>,
 }
 
 #[cfg(feature = "xml")]
 #[derive(Deserialize, Default, Debug)]
 #[serde(rename_all = "PascalCase")]
 struct System {
-    pub provider: Option<Provider>,
+    provider: Option<Provider>,
 }
 
 #[cfg(feature = "xml")]
 #[derive(Deserialize, Default, Debug)]
 #[serde(rename_all = "PascalCase")]
 struct MyEvent {
-    pub system: Option<System>,
+    system: Option<System>,
 }
 
 #[cfg(feature = "xml")]
