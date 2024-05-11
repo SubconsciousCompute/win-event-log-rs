@@ -93,15 +93,15 @@ fn try_load_from_dll(function: &str) -> Option<EvtApi> {
     let ffi_function = CString::new(function).unwrap();
 
     let handle = match unsafe { GetModuleHandleA(ffi_module.as_ptr()) } {
-        i if i == null_mut() => match unsafe { LoadLibraryA(ffi_module.as_ptr()) } {
-            j if j == null_mut() => None,
+        i if i.is_null() => match unsafe { LoadLibraryA(ffi_module.as_ptr()) } {
+            j if j.is_null() => None,
             j => Some(j),
         },
         i => Some(i),
     };
     match handle {
         Some(h) => match unsafe { GetProcAddress(h, ffi_function.as_ptr()) } {
-            i if i == null_mut() => None,
+            i if i.is_null() => None,
             addr => match function {
                 "EvtClose" => Some(EvtApi::Close(unsafe {
                     transmute::<HANDLE, EvtCloseFn>(addr as _)
@@ -191,7 +191,7 @@ impl WinEvents {
                         EvtQueryOptions::EvtQueryChannelPath.bits(),
                     )
                 } {
-                    i if i == null_mut() => Err(format!(
+                    i if i.is_null() => Err(format!(
                         "There was an error processing the query: {}",
                         unsafe { GetLastError() }
                     )),
@@ -300,8 +300,9 @@ impl Iterator for WinEventsIntoIterator {
                 Some(EvtApi::Render(ref render)) => {
                     let mut buffer_used: DWORD = 0;
                     let mut property_count: DWORD = 0;
-                    
-                        if unsafe { render(
+
+                    if unsafe {
+                        render(
                             null_mut(),
                             handle.0 as _,
                             1,
@@ -310,10 +311,11 @@ impl Iterator for WinEventsIntoIterator {
                             &mut buffer_used,
                             &mut property_count,
                         ) == 0
-                            && GetLastError() == 122 }
-                        {
-                            let mut buf: Vec<u16> = vec![0; buffer_used as usize];
-                            match unsafe { render(
+                            && GetLastError() == 122
+                    } {
+                        let mut buf: Vec<u16> = vec![0; buffer_used as usize];
+                        match unsafe {
+                            render(
                                 null_mut(),
                                 handle.0 as _,
                                 1,
@@ -321,18 +323,17 @@ impl Iterator for WinEventsIntoIterator {
                                 buf.as_mut_ptr() as _,
                                 &mut buffer_used,
                                 &mut property_count,
-                            ) } {
-                                0 => None,
-                                _ => {
-                                    let s =
-                                        OsString::from_wide(&buf[..]).to_string_lossy().to_string();
-                                    Some(Event(s))
-                                }
+                            )
+                        } {
+                            0 => None,
+                            _ => {
+                                let s = OsString::from_wide(&buf[..]).to_string_lossy().to_string();
+                                Some(Event(s))
                             }
-                        } else {
-                            None
                         }
-                    
+                    } else {
+                        None
+                    }
                 }
                 _ => None,
             },
