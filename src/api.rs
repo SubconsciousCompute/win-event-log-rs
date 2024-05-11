@@ -354,9 +354,9 @@ mod tests {
             Err(e) => match unsafe { GetLastError() } {
                 // false positive from wine
                 0 => assert!(true),
-                _ => {
-                    println!("test_params_query_list(): {}", e);
-                    assert!(false);
+                x => {
+                    eprintln!("test_params_query_list(): {e}");
+                    assert!(false, "Error: {e}");
                 }
             },
         }
