@@ -36,6 +36,12 @@ pub struct QueryList {
     queries: Vec<Query>,
 }
 
+impl<'a> Default for QueryList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> QueryList {
     /// Create a new `QueryList`
     pub fn new() -> QueryList {
@@ -72,15 +78,21 @@ impl fmt::Display for QueryList {
     }
 }
 
-impl Into<String> for QueryList {
-    fn into(self) -> String {
-        self.to_string()
+impl From<QueryList> for String {
+    fn from(val: QueryList) -> Self {
+        val.to_string()
     }
 }
 
 #[derive(Clone)]
 pub struct Query {
     items: Vec<QueryItem>,
+}
+
+impl<'a> Default for Query {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<'a> Query {
@@ -106,7 +118,7 @@ impl<'a> Query {
 impl std::fmt::Display for Query {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         for item in (*self.items).iter() {
-            write!(f, "{}\n", item)?;
+            writeln!(f, "{}", item)?;
         }
         Ok(())
     }
