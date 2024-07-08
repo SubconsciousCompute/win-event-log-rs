@@ -11,7 +11,6 @@
 //! # Examples
 //!
 //! ```rust
-//! extern crate win_event_log;
 //! use win_event_log::prelude::*;
 //!
 //! let conditions = vec![ Condition::filter(EventFilter::level(1, Comparison::Equal)) ];
@@ -32,11 +31,9 @@ extern crate bitflags;
 #[macro_use]
 extern crate lazy_static;
 #[cfg(feature = "xml")]
+extern crate quick_xml;
+#[cfg(feature = "xml")]
 extern crate serde;
-#[cfg(feature = "xml")]
-extern crate serde_derive;
-#[cfg(feature = "xml")]
-extern crate serde_xml_rs;
 extern crate winapi;
 
 mod api;

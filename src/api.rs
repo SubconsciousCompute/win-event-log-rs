@@ -1,13 +1,12 @@
 #![allow(non_upper_case_globals)]
 
 #[cfg(feature = "xml")]
-use serde::Deserialize;
+use quick_xml::de::from_str;
 #[cfg(feature = "xml")]
-use serde_xml_rs::from_str;
+use serde::de::DeserializeOwned;
 use std::ffi::{CString, OsString};
 use std::fmt;
 use std::mem::transmute;
-use std::os::windows::ffi::OsStrExt;
 use std::os::windows::prelude::*;
 use std::ptr::null_mut;
 use winapi::shared::minwindef::{BOOL, DWORD, PDWORD};
@@ -93,16 +92,16 @@ fn try_load_from_dll(function: &str) -> Option<EvtApi> {
     let ffi_function = CString::new(function).unwrap();
 
     let handle = match unsafe { GetModuleHandleA(ffi_module.as_ptr()) } {
-        i if i == null_mut() => match unsafe { LoadLibraryA(ffi_module.as_ptr()) } {
-            j if j == null_mut() => None,
+        i if i.is_null() => match unsafe { LoadLibraryA(ffi_module.as_ptr()) } {
+            j if j.is_null() => None,
             j => Some(j),
         },
         i => Some(i),
     };
     match handle {
         Some(h) => match unsafe { GetProcAddress(h, ffi_function.as_ptr()) } {
-            i if i == null_mut() => None,
-            addr => match function.as_ref() {
+            i if i.is_null() => None,
+            addr => match function {
                 "EvtClose" => Some(EvtApi::Close(unsafe {
                     transmute::<HANDLE, EvtCloseFn>(addr as _)
                 })),
@@ -126,11 +125,11 @@ fn try_load_from_dll(function: &str) -> Option<EvtApi> {
 }
 
 lazy_static! {
-    pub static ref EvtClose: Option<EvtApi> = { try_load_from_dll("EvtClose") };
-    pub static ref EvtNext: Option<EvtApi> = { try_load_from_dll("EvtNext") };
-    pub static ref EvtQuery: Option<EvtApi> = { try_load_from_dll("EvtQuery") };
-    pub static ref EvtRender: Option<EvtApi> = { try_load_from_dll("EvtRender") };
-    pub static ref EvtSubscribe: Option<EvtApi> = { try_load_from_dll("EvtSubscribe") };
+    pub static ref EvtClose: Option<EvtApi> = try_load_from_dll("EvtClose");
+    pub static ref EvtNext: Option<EvtApi> = try_load_from_dll("EvtNext");
+    pub static ref EvtQuery: Option<EvtApi> = try_load_from_dll("EvtQuery");
+    pub static ref EvtRender: Option<EvtApi> = try_load_from_dll("EvtRender");
+    pub static ref EvtSubscribe: Option<EvtApi> = try_load_from_dll("EvtSubscribe");
 }
 
 pub struct EvtHandleWrapper(pub EvtHandle);
@@ -191,7 +190,7 @@ impl WinEvents {
                         EvtQueryOptions::EvtQueryChannelPath.bits(),
                     )
                 } {
-                    i if i == null_mut() => Err(format!(
+                    i if i.is_null() => Err(format!(
                         "There was an error processing the query: {}",
                         unsafe { GetLastError() }
                     )),
@@ -206,7 +205,7 @@ impl WinEvents {
     }
 
     /// Gets the next item from the event log. If there are no more evens `None` is returned.
-    pub fn next(&mut self) -> Option<EvtHandleWrapper> {
+    fn next_evt(&mut self) -> Option<EvtHandleWrapper> {
         if let Some(ref handle) = self.handle {
             let mut next_handle: Vec<EvtHandle> = vec![null_mut() as _];
             match *EvtNext {
@@ -262,14 +261,21 @@ impl fmt::Display for Event {
 
 #[cfg(feature = "xml")]
 impl Event {
-    pub fn into<'de, T>(self) -> T
+    pub fn into<T>(self) -> T
     where
-        T: Deserialize<'de> + Default,
+        T: DeserializeOwned + Default,
     {
-        match from_str(&self.0) {
+        match from_str::<T>(&self.0) {
             Ok(o) => o,
             _ => Default::default(),
         }
+    }
+
+    pub fn try_into<T>(self) -> Result<T, String>
+    where
+        T: DeserializeOwned + Default,
+    {
+        from_str::<T>(&self.0).map_err(|err| format!("Deserialization error: {err}"))
     }
 }
 
@@ -295,13 +301,14 @@ impl Iterator for WinEventsIntoIterator {
 
     /// Returns the next event. If there are no more events, `None` is returned.
     fn next(&mut self) -> Option<Event> {
-        match self.win_events.next() {
+        match self.win_events.next_evt() {
             Some(handle) => match *EvtRender {
                 Some(EvtApi::Render(ref render)) => {
                     let mut buffer_used: DWORD = 0;
                     let mut property_count: DWORD = 0;
-                    
-                        if unsafe { render(
+
+                    if unsafe {
+                        render(
                             null_mut(),
                             handle.0 as _,
                             1,
@@ -310,10 +317,11 @@ impl Iterator for WinEventsIntoIterator {
                             &mut buffer_used,
                             &mut property_count,
                         ) == 0
-                            && GetLastError() == 122 }
-                        {
-                            let mut buf: Vec<u16> = vec![0; buffer_used as usize];
-                            match unsafe { render(
+                            && GetLastError() == 122
+                    } {
+                        let mut buf: Vec<u16> = vec![0; buffer_used as usize];
+                        match unsafe {
+                            render(
                                 null_mut(),
                                 handle.0 as _,
                                 1,
@@ -321,18 +329,17 @@ impl Iterator for WinEventsIntoIterator {
                                 buf.as_mut_ptr() as _,
                                 &mut buffer_used,
                                 &mut property_count,
-                            ) } {
-                                0 => None,
-                                _ => {
-                                    let s =
-                                        OsString::from_wide(&buf[..]).to_string_lossy().to_string();
-                                    Some(Event(s))
-                                }
+                            )
+                        } {
+                            0 => None,
+                            _ => {
+                                let s = OsString::from_wide(&buf[..]).to_string_lossy().to_string();
+                                Some(Event(s))
                             }
-                        } else {
-                            None
                         }
-                    
+                    } else {
+                        None
+                    }
                 }
                 _ => None,
             },
@@ -348,16 +355,10 @@ mod tests {
         use crate::{QueryList, WinEvents};
         use winapi::um::errhandlingapi::GetLastError;
         let ql = QueryList::new();
-        match WinEvents::get(ql) {
-            Ok(_) => assert!(true),
-            Err(e) => match unsafe { GetLastError() } {
-                // false positive from wine
-                0 => assert!(true),
-                _ => {
-                    println!("test_params_query_list(): {}", e);
-                    assert!(false);
-                }
-            },
+        if let Err(err) = WinEvents::get(ql) {
+            let last_error = unsafe { GetLastError() };
+            println!("test_params_query_list(): {err}, GetLastError() = {last_error}");
+            assert!(last_error == 0);
         }
     }
 
@@ -375,16 +376,10 @@ and
 </Query>
 </QueryList>"#;
 
-        match WinEvents::get(query) {
-            Ok(_) => assert!(true),
-            Err(e) => match unsafe { GetLastError() } {
-                // false positive from wine
-                0 => assert!(true),
-                _ => {
-                    println!("test_params_str(): {}", e);
-                    assert!(false);
-                }
-            },
+        if let Err(err) = WinEvents::get(query) {
+            let last_error = unsafe { GetLastError() };
+            println!("test_params_str(): {err}");
+            assert!(last_error == 0);
         }
     }
 }
